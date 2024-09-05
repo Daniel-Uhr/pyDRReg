@@ -4,6 +4,8 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.utils import resample
 from scipy import stats
 import statsmodels.formula.api as smf
+import statsmodels.api as sm
+import warnings
 
 # Function to calculate robust standard errors using the sandwich estimator
 def robust_se(model, X, Y):
@@ -87,9 +89,12 @@ def OR_att(df, X_cols, T_col, Y_col):
 
 # Function to estimate ATE using IPW (Inverse Probability Weighting)
 def IPW_ate(df, X_cols, T_col, Y_col):
-    # Estimate propensity scores using logistic regression
-    formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
-    df['pscore'] = smf.logit(formula_pscore, data=df).fit().predict()
+    # Suppress optimization output
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        # Estimate propensity scores using logistic regression
+        formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
+        df['pscore'] = smf.logit(formula_pscore, data=df).fit(disp=0).predict()
     
     # Calculate weights for ATE
     df['W1'] = 1 / df['pscore']
@@ -99,7 +104,7 @@ def IPW_ate(df, X_cols, T_col, Y_col):
     df['W_ATE'] = df['W1'] + df['W2']
     
     # Weighted regression for ATE
-    model_ate = smf.wls(f"{Y_col} ~ {T_col}", data=df, weights=df['W_ATE']).fit()
+    model_ate = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATE']).fit()
     
     return {
         'Estimate': model_ate.params[T_col],
@@ -111,16 +116,19 @@ def IPW_ate(df, X_cols, T_col, Y_col):
 
 # Function to estimate ATT using IPW (Inverse Probability Weighting)
 def IPW_att(df, X_cols, T_col, Y_col):
-    # Estimate propensity scores using logistic regression
-    formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
-    df['pscore'] = smf.logit(formula_pscore, data=df).fit().predict()
+    # Suppress optimization output
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        # Estimate propensity scores using logistic regression
+        formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
+        df['pscore'] = smf.logit(formula_pscore, data=df).fit(disp=0).predict()
     
     # Calculate weights for ATT
     df['W_ATT'] = df['pscore'] / (1 - df['pscore'])
     df.loc[df[T_col] == 1, 'W_ATT'] = 1
     
     # Weighted regression for ATT
-    model_att = smf.wls(f"{Y_col} ~ {T_col}", data=df, weights=df['W_ATT']).fit()
+    model_att = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATT']).fit()
     
     return {
         'Estimate': model_att.params[T_col],
@@ -221,4 +229,21 @@ class pyDRReg:
     def summary(self):
         if self.results is None:
             raise ValueError("Estimation has not been completed.")
-        return self.results
+        
+        # Format results into a DataFrame for friendly display
+        results_df = pd.DataFrame({
+            'Metric': ['Estimator', 'Method', 'Estimate', 'SE', 't-stat', 'p-value', 'CI Lower', 'CI Upper'],
+            'Value': [
+                self.results['Estimator'],
+                self.results['Method'],
+                self.results['Estimate'],
+                self.results['SE'],
+                self.results['t-stat'],
+                self.results['p-value'],
+                self.results['CI'][0],  # CI Lower
+                self.results['CI'][1]   # CI Upper
+            ]
+        })
+        
+        # Return the formatted DataFrame
+        return results_df
