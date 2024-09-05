@@ -166,7 +166,7 @@ class pyDRReg:
             'Estimator': self.estimator,
             'Method': self.method.upper(),
             'Estimate': self.fixed_estimate,  # Use the fixed estimate
-            'SE': se,
+            'bootstrap_SE': se,
             't-stat': z_value,
             'p-value': p_value,
             'CI': (ci_lower, ci_upper)
@@ -183,7 +183,7 @@ class pyDRReg:
                 self.results['Estimator'],
                 self.results['Method'],
                 self.results['Estimate'],
-                self.results['bootstrap SE'],
+                self.results['bootstrap_SE'],
                 self.results['t-stat'],
                 self.results['p-value'],
                 self.results['CI'][0],  # CI Lower
