@@ -54,38 +54,30 @@ def OR_ate(df, X_cols, T_col, Y_col):
 
 # Function to estimate ATT using Outcome Regression
 def OR_att(df, X_cols, T_col, Y_col):
+    # Separar dados tratados (D=1) e não tratados (D=0)
     X_treated = df[df[T_col] == 1][X_cols].values
     Y_treated = df[df[T_col] == 1][Y_col].values
     X_control = df[df[T_col] == 0][X_cols].values
     Y_control = df[df[T_col] == 0][Y_col].values
-    
-    # Models
+
+    # Ajustar modelos de regressão linear
     model_treated = LinearRegression().fit(X_treated, Y_treated)
     model_control = LinearRegression().fit(X_control, Y_control)
-    
-    # Predictions for treated and counterfactuals using control group model
+
+    # Calcular previsões para tratados e contrafactuais usando o modelo do grupo de controle
     mu1_X = model_treated.predict(X_treated)
-    mu0_X = model_control.predict(X_treated)  # Use treated X for counterfactual
-    
-    # Estimate ATT
-    OR_att_estimate = np.mean(mu1_X - mu0_X)
-    
-    # Calculate robust standard error for ATT
-    se_att = np.sqrt(np.var(mu1_X - mu0_X) / len(mu1_X))
-    
-    # Calculate confidence interval and p-value
-    z_value = OR_att_estimate / se_att
-    p_value = 2 * (1 - stats.norm.cdf(np.abs(z_value)))
-    ci_lower = OR_att_estimate - 1.96 * se_att
-    ci_upper = OR_att_estimate + 1.96 * se_att
-    
-    return {
-        'Estimate': OR_att_estimate,
-        'SE': se_att,
-        't-stat': z_value,
-        'p-value': p_value,
-        'CI': (ci_lower, ci_upper)
-    }
+    mu0_X = model_control.predict(X_treated)  # Usando X_treated para manter o contrafactual consistente
+
+    # Calcular desvios para todas as observações
+    deviations_treated = Y_treated - mu1_X
+
+    # Calcular a média dos desvios tratados
+    deviations_mean = deviations_treated.mean()  # Considerando apenas os tratados para o ATT
+
+    # Calcular ATT
+    OR_att_estimate = (mu1_X.mean() - mu0_X.mean()) + deviations_mean
+
+    return OR_att_estimate
 
 # Function to estimate ATE using IPW (Inverse Probability Weighting)
 def IPW_ate(df, X_cols, T_col, Y_col):
@@ -248,3 +240,13 @@ class pyDRReg:
         # Return the formatted DataFrame
         return results_df
 
+# Example usage:
+# T_col = 'Treated'
+# Y_col = 'Y'
+# X_cols = ['casada', 'mage', 'medu']
+
+# Create the estimator pyDRReg for ATT using 'OR' (Outcome Regression)
+# estimator_att_or = pyDRReg(df, X_cols, T_col, Y_col, method='att', estimator='OR', n_bootstrap=50)
+
+# View the results for 'OR' ATT
+# print(estimator_att_or.summary())
