@@ -24,64 +24,27 @@ def OR_ate(df, X_cols, T_col, Y_col):
     # Estimate ATE
     OR_ate_estimate = np.mean(mu1 - mu0)
     
-    # Calculate standard error using the treated and untreated groups' variances
-    se_ate = np.sqrt(np.var(mu1 - mu0) / len(mu1))
-    
-    # Calculate confidence interval and p-value
-    z_value = OR_ate_estimate / se_ate
-    p_value = 2 * (1 - stats.norm.cdf(np.abs(z_value)))
-    ci_lower = OR_ate_estimate - 1.96 * se_ate
-    ci_upper = OR_ate_estimate + 1.96 * se_ate
-    
-    return {
-        'Estimate': OR_ate_estimate,
-        'SE': se_ate,
-        't-stat': z_value,
-        'p-value': p_value,
-        'CI': (ci_lower, ci_upper)
-    }
+    return OR_ate_estimate
 
 # Function to estimate ATT using Outcome Regression
 def OR_att(df, X_cols, T_col, Y_col):
-    # Separate treated (D=1) and untreated (D=0) data
     X_treated = df[df[T_col] == 1][X_cols].values
     Y_treated = df[df[T_col] == 1][Y_col].values
     X_control = df[df[T_col] == 0][X_cols].values
     Y_control = df[df[T_col] == 0][Y_col].values
     
-    # Fit linear regression models
+    # Models
     model_treated = LinearRegression().fit(X_treated, Y_treated)
     model_control = LinearRegression().fit(X_control, Y_control)
     
-    # Predict outcomes for treated and counterfactuals using control group model
+    # Predictions
     mu1_X = model_treated.predict(X_treated)
-    mu0_X = model_control.predict(X_treated)  # Counterfactual for treated
-    
-    # Calculate deviations for treated
-    deviations_treated = Y_treated - mu1_X
-    
-    # Mean of deviations
-    deviations_mean = deviations_treated.mean()
+    mu0_X = model_control.predict(X_treated)  # Use treated X for counterfactual
     
     # Estimate ATT
-    OR_att_estimate = (mu1_X.mean() - mu0_X.mean()) + deviations_mean
+    OR_att_estimate = np.mean(mu1_X - mu0_X)
     
-    # Calculate standard error
-    se_att = np.sqrt(np.var(mu1_X - mu0_X) / len(mu1_X))
-    
-    # Calculate confidence interval and p-value
-    z_value = OR_att_estimate / se_att
-    p_value = 2 * (1 - stats.norm.cdf(np.abs(z_value)))
-    ci_lower = OR_att_estimate - 1.96 * se_att
-    ci_upper = OR_att_estimate + 1.96 * se_att
-    
-    return {
-        'Estimate': OR_att_estimate,
-        'SE': se_att,
-        't-stat': z_value,
-        'p-value': p_value,
-        'CI': (ci_lower, ci_upper)
-    }
+    return OR_att_estimate
 
 # Function to estimate ATE using IPW (Inverse Probability Weighting)
 def IPW_ate(df, X_cols, T_col, Y_col):
@@ -98,13 +61,7 @@ def IPW_ate(df, X_cols, T_col, Y_col):
     
     model_ate = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATE']).fit()
     
-    return {
-        'Estimate': model_ate.params[T_col],
-        'SE': model_ate.bse[T_col],
-        't-stat': model_ate.tvalues[T_col],
-        'p-value': model_ate.pvalues[T_col],
-        'CI': (model_ate.conf_int().loc[T_col, 0], model_ate.conf_int().loc[T_col, 1])
-    }
+    return model_ate.params[T_col]
 
 # Function to estimate ATT using IPW (Inverse Probability Weighting)
 def IPW_att(df, X_cols, T_col, Y_col):
@@ -118,13 +75,7 @@ def IPW_att(df, X_cols, T_col, Y_col):
     
     model_att = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATT']).fit()
     
-    return {
-        'Estimate': model_att.params[T_col],
-        'SE': model_att.bse[T_col],
-        't-stat': model_att.tvalues[T_col],
-        'p-value': model_att.pvalues[T_col],
-        'CI': (model_att.conf_int().loc[T_col, 0], model_att.conf_int().loc[T_col, 1])
-    }
+    return model_att.params[T_col]
 
 # Function to estimate ATE and ATT using Doubly Robust Estimator
 def DR_ate_att(df, X_cols, T_col, Y_col):
@@ -182,12 +133,11 @@ class pyDRReg:
                 estimate = dr_results['ATE_Estimate'] if self.method == 'ate' else dr_results['ATT_Estimate']
             else:
                 # Handle OR and IPW estimators correctly as dictionaries or scalars
-                result = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
-                estimate = result['Estimate'] if isinstance(result, dict) else result
+                estimate = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
             
             estimates.append(estimate)
         
-        # Calculate standard error, confidence intervals, and p-value
+        # Calculate standard error, confidence intervals, and p-value using bootstrap
         se = np.std(estimates, ddof=1)
         mean_estimate = np.mean(estimates)
         ci_lower = mean_estimate - 1.96 * se
@@ -227,5 +177,4 @@ class pyDRReg:
         
         # Return the formatted DataFrame
         return results_df
-
 
