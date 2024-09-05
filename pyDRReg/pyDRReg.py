@@ -6,9 +6,6 @@ from scipy import stats
 import statsmodels.formula.api as smf
 import warnings
 
-# Set a fixed random seed for reproducibility
-np.random.seed(42)
-
 # Function to estimate ATE using Outcome Regression
 def OR_ate(df, X_cols, T_col, Y_col):
     X = df[X_cols].values
@@ -108,7 +105,7 @@ def DR_ate_att(df, X_cols, T_col, Y_col):
 
 # Main class to perform estimation with various estimators
 class pyDRReg:
-    def __init__(self, df, X_cols, T_col, Y_col, method='ate', estimator='OR', n_bootstrap=50):
+    def __init__(self, df, X_cols, T_col, Y_col, method='ate', estimator='OR', n_bootstrap=50, seed=None):
         self.df = df
         self.X_cols = X_cols
         self.T_col = T_col
@@ -116,8 +113,10 @@ class pyDRReg:
         self.method = method.lower()
         self.estimator = estimator.upper()
         self.n_bootstrap = n_bootstrap
+        self.seed = seed
         self.results = None
-        self._run_estimation()
+        self._estimate_fixed_effect()  # First, get the fixed point estimate
+        self._run_estimation()  # Then, run bootstrap for SE and other stats
     
     def _select_estimator(self):
         if self.estimator == 'OR':
@@ -129,8 +128,18 @@ class pyDRReg:
         else:
             raise ValueError(f"Estimator '{self.estimator}' not recognized. Available estimators: 'OR', 'IPW', 'DR'.")
 
+    def _estimate_fixed_effect(self):
+        # Use the selected estimator to get the point estimate directly
+        estimator_func = self._select_estimator()
+        if self.estimator == 'DR':
+            dr_results = estimator_func(self.df, self.X_cols, self.T_col, self.Y_col)
+            self.fixed_estimate = dr_results['ATE_Estimate'] if self.method == 'ate' else dr_results['ATT_Estimate']
+        else:
+            self.fixed_estimate = estimator_func(self.df, self.X_cols, self.T_col, self.Y_col)
+    
     def _run_estimation(self):
-        np.random.seed(42)  # Fix the random seed for reproducibility
+        if self.seed is not None:
+            np.random.seed(self.seed)  # Fix the random seed for reproducibility
         estimates = []
         estimator_func = self._select_estimator()
         
@@ -147,17 +156,16 @@ class pyDRReg:
         
         # Calculate standard error, confidence intervals, and p-value using bootstrap
         se = np.std(estimates, ddof=1)
-        mean_estimate = np.mean(estimates)
-        ci_lower = mean_estimate - 1.96 * se
-        ci_upper = mean_estimate + 1.96 * se
-        z_value = mean_estimate / se
+        ci_lower = self.fixed_estimate - 1.96 * se
+        ci_upper = self.fixed_estimate + 1.96 * se
+        z_value = self.fixed_estimate / se
         p_value = 2 * (1 - stats.norm.cdf(np.abs(z_value)))
         
         # Store results
         self.results = {
             'Estimator': self.estimator,
             'Method': self.method.upper(),
-            'Estimate': mean_estimate,
+            'Estimate': self.fixed_estimate,  # Use the fixed estimate
             'SE': se,
             't-stat': z_value,
             'p-value': p_value,
