@@ -155,7 +155,6 @@ def DR_ate_att(df, X_cols, T_col, Y_col):
 
     return {
         'ATE_Estimate': np.mean(dr_ate),
-        'ATT_Estimate': np.mean
         'ATT_Estimate': np.mean(dr_att)
     }
 
