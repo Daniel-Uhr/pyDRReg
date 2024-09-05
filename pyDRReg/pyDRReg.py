@@ -6,6 +6,9 @@ from scipy import stats
 import statsmodels.formula.api as smf
 import warnings
 
+# Set a fixed random seed for reproducibility
+np.random.seed(42)
+
 # Function to estimate ATE using Outcome Regression
 def OR_ate(df, X_cols, T_col, Y_col):
     X = df[X_cols].values
@@ -127,6 +130,7 @@ class pyDRReg:
             raise ValueError(f"Estimator '{self.estimator}' not recognized. Available estimators: 'OR', 'IPW', 'DR'.")
 
     def _run_estimation(self):
+        np.random.seed(42)  # Fix the random seed for reproducibility
         estimates = []
         estimator_func = self._select_estimator()
         
@@ -181,5 +185,3 @@ class pyDRReg:
         
         # Return the formatted DataFrame
         return results_df
-
-
