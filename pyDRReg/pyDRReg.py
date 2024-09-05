@@ -7,17 +7,6 @@ import statsmodels.formula.api as smf
 import statsmodels.api as sm
 import warnings
 
-# Function to calculate robust standard errors using the sandwich estimator
-def robust_se(model, X, Y):
-    predictions = model.predict(X)
-    residuals = Y - predictions
-    X_design = np.hstack([np.ones((X.shape[0], 1)), X])  # Add constant term
-    bread = np.linalg.inv(X_design.T @ X_design)
-    meat = np.sum((residuals ** 2)[:, None, None] * (X_design[:, :, None] @ X_design[:, None, :]), axis=0)
-    robust_cov = bread @ meat @ bread
-    robust_se = np.sqrt(np.diag(robust_cov))
-    return robust_se[1]  # Return the standard error of the treatment effect
-
 # Function to estimate ATE using Outcome Regression
 def OR_ate(df, X_cols, T_col, Y_col):
     X = df[X_cols].values
@@ -35,7 +24,7 @@ def OR_ate(df, X_cols, T_col, Y_col):
     # Estimate ATE
     OR_ate_estimate = np.mean(mu1 - mu0)
     
-    # Calculate robust standard error for ATE using the combined variance of treated and untreated groups
+    # Calculate standard error using the treated and untreated groups' variances
     se_ate = np.sqrt(np.var(mu1 - mu0) / len(mu1))
     
     # Calculate confidence interval and p-value
@@ -54,50 +43,59 @@ def OR_ate(df, X_cols, T_col, Y_col):
 
 # Function to estimate ATT using Outcome Regression
 def OR_att(df, X_cols, T_col, Y_col):
-    # Separar dados tratados (D=1) e não tratados (D=0)
+    # Separate treated (D=1) and untreated (D=0) data
     X_treated = df[df[T_col] == 1][X_cols].values
     Y_treated = df[df[T_col] == 1][Y_col].values
     X_control = df[df[T_col] == 0][X_cols].values
     Y_control = df[df[T_col] == 0][Y_col].values
-
-    # Ajustar modelos de regressão linear
+    
+    # Fit linear regression models
     model_treated = LinearRegression().fit(X_treated, Y_treated)
     model_control = LinearRegression().fit(X_control, Y_control)
-
-    # Calcular previsões para tratados e contrafactuais usando o modelo do grupo de controle
+    
+    # Predict outcomes for treated and counterfactuals using control group model
     mu1_X = model_treated.predict(X_treated)
-    mu0_X = model_control.predict(X_treated)  # Usando X_treated para manter o contrafactual consistente
-
-    # Calcular desvios para todas as observações
+    mu0_X = model_control.predict(X_treated)  # Counterfactual for treated
+    
+    # Calculate deviations for treated
     deviations_treated = Y_treated - mu1_X
-
-    # Calcular a média dos desvios tratados
-    deviations_mean = deviations_treated.mean()  # Considerando apenas os tratados para o ATT
-
-    # Calcular ATT
+    
+    # Mean of deviations
+    deviations_mean = deviations_treated.mean()
+    
+    # Estimate ATT
     OR_att_estimate = (mu1_X.mean() - mu0_X.mean()) + deviations_mean
-
+    
+    # Calculate standard error
+    se_att = np.sqrt(np.var(mu1_X - mu0_X) / len(mu1_X))
+    
+    # Calculate confidence interval and p-value
+    z_value = OR_att_estimate / se_att
+    p_value = 2 * (1 - stats.norm.cdf(np.abs(z_value)))
+    ci_lower = OR_att_estimate - 1.96 * se_att
+    ci_upper = OR_att_estimate + 1.96 * se_att
+    
     return {
-        'Estimate': OR_att_estimate
+        'Estimate': OR_att_estimate,
+        'SE': se_att,
+        't-stat': z_value,
+        'p-value': p_value,
+        'CI': (ci_lower, ci_upper)
     }
 
 # Function to estimate ATE using IPW (Inverse Probability Weighting)
 def IPW_ate(df, X_cols, T_col, Y_col):
-    # Suppress optimization output
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        # Estimate propensity scores using logistic regression
         formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
         df['pscore'] = smf.logit(formula_pscore, data=df).fit(disp=0).predict()
     
-    # Calculate weights for ATE
     df['W1'] = 1 / df['pscore']
     df.loc[df[T_col] == 0, 'W1'] = 0
     df['W2'] = 1 / (1 - df['pscore'])
     df.loc[df[T_col] == 1, 'W2'] = 0
     df['W_ATE'] = df['W1'] + df['W2']
     
-    # Weighted regression for ATE
     model_ate = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATE']).fit()
     
     return {
@@ -110,18 +108,14 @@ def IPW_ate(df, X_cols, T_col, Y_col):
 
 # Function to estimate ATT using IPW (Inverse Probability Weighting)
 def IPW_att(df, X_cols, T_col, Y_col):
-    # Suppress optimization output
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        # Estimate propensity scores using logistic regression
         formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
         df['pscore'] = smf.logit(formula_pscore, data=df).fit(disp=0).predict()
     
-    # Calculate weights for ATT
     df['W_ATT'] = df['pscore'] / (1 - df['pscore'])
     df.loc[df[T_col] == 1, 'W_ATT'] = 1
     
-    # Weighted regression for ATT
     model_att = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATT']).fit()
     
     return {
@@ -134,23 +128,18 @@ def IPW_att(df, X_cols, T_col, Y_col):
 
 # Function to estimate ATE and ATT using Doubly Robust Estimator
 def DR_ate_att(df, X_cols, T_col, Y_col):
-    X_np = df[X_cols].values  # Convert X to numpy array
-    T_np = df[T_col].values  # Convert T to numpy array
-    Y_np = df[Y_col].values  # Convert Y to numpy array
+    X_np = df[X_cols].values
+    T_np = df[T_col].values
+    Y_np = df[Y_col].values
 
-    # Estimate propensity scores
     ps = LogisticRegression(C=1e6, max_iter=1000).fit(X_np, T_np).predict_proba(X_np)[:, 1]
-    df["ps"] = ps  # Add ps to DataFrame for consistency
+    df["ps"] = ps
 
-    # Estimate mu0 and mu1 using a combined model
     mu_model = LinearRegression().fit(df[X_cols + [T_col]], df[Y_col])
-    mu0 = mu_model.predict(df[X_cols].assign(**{T_col: 0}))  # Corrected column name assignment
-    mu1 = mu_model.predict(df[X_cols].assign(**{T_col: 1}))  # Corrected column name assignment
+    mu0 = mu_model.predict(df[X_cols].assign(**{T_col: 0}))
+    mu1 = mu_model.predict(df[X_cols].assign(**{T_col: 1}))
 
-    # Calculate ATE using DR formula
     dr_ate = mu1 - mu0 + (T_np / ps) * (Y_np - mu1) - ((1 - T_np) / (1 - ps)) * (Y_np - mu0)
-    
-    # Calculate ATT using DR formula
     dr_att = mu1 - mu0 + df[T_col] * (Y_np - mu1) - (1 - df[T_col]) * ps / (1 - ps) * (Y_np - mu0)
 
     return {
@@ -166,13 +155,12 @@ class pyDRReg:
         self.T_col = T_col
         self.Y_col = Y_col
         self.method = method
-        self.estimator = estimator.upper()  # Convert to uppercase to standardize
+        self.estimator = estimator.upper()
         self.n_bootstrap = n_bootstrap
         self.results = None
-        self._run_estimation()  # Run estimation automatically upon initialization
+        self._run_estimation()
     
     def _select_estimator(self):
-        # Select the appropriate estimator function based on the method and estimator type
         if self.estimator == 'OR':
             return OR_ate if self.method == 'ate' else OR_att
         elif self.estimator == 'IPW':
@@ -186,18 +174,14 @@ class pyDRReg:
         estimates = []
         estimator_func = self._select_estimator()
         
-        # Bootstrap process
         for _ in range(self.n_bootstrap):
-            # Resample the data with replacement
             df_resampled = resample(self.df, replace=True, n_samples=len(self.df))
             
-            # Calculate the estimate using the selected estimator function
             if self.estimator == 'DR':
-                # DR estimator returns both ATE and ATT, select based on method
                 dr_results = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
                 estimate = dr_results['ATE_Estimate'] if self.method == 'ate' else dr_results['ATT_Estimate']
             else:
-                # Adjusted to handle OR_att and OR_ate correctly as dictionaries or scalar
+                # Handle OR and IPW estimators correctly as dictionaries or scalars
                 result = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
                 estimate = result['Estimate'] if isinstance(result, dict) else result
             
@@ -244,13 +228,4 @@ class pyDRReg:
         # Return the formatted DataFrame
         return results_df
 
-# Example usage:
-# T_col = 'Treated'
-# Y_col = 'Y'
-# X_cols = ['casada', 'mage', 'medu']
 
-# Create the estimator pyDRReg for ATT using 'OR' (Outcome Regression)
-# estimator_att_or = pyDRReg(df, X_cols, T_col, Y_col, method='att', estimator='OR', n_bootstrap=50)
-
-# View the results for 'OR' ATT
-# print(estimator_att_or.summary())
