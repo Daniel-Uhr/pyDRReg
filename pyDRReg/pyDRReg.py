@@ -4,6 +4,7 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.utils import resample
 from scipy import stats
 import statsmodels.formula.api as smf
+import statsmodels.api as sm
 import warnings
 
 # Function to estimate ATE using Outcome Regression
