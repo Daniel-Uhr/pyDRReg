@@ -178,7 +178,7 @@ class pyDRReg:
         
         # Format results into a DataFrame for friendly display
         results_df = pd.DataFrame({
-            'Metric': ['Estimator', 'Method', 'Estimate', 'SE', 't-stat', 'p-value', 'CI Lower', 'CI Upper'],
+            'Metric': ['Estimator', 'Method', 'Estimate', 'bootstrap_SE', 't-stat', 'p-value', 'CI Lower', 'CI Upper'],
             'Value': [
                 self.results['Estimator'],
                 self.results['Method'],
