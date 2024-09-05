@@ -7,10 +7,10 @@ import statsmodels.formula.api as smf
 import warnings
 
 # Function to estimate ATE using Outcome Regression
-def OR_ate(data, X_cols, T_col, Y_col):
-    X = data[X_cols].values
-    T = data[T_col].values
-    Y = data[Y_col].values
+def OR_ate(df, X_cols, T_col, Y_col):
+    X = df[X_cols].values
+    T = df[T_col].values
+    Y = df[Y_col].values
     
     # Model for untreated (D=0)
     model_0 = LinearRegression().fit(X[T == 0], Y[T == 0])
@@ -26,11 +26,11 @@ def OR_ate(data, X_cols, T_col, Y_col):
     return OR_ate_estimate
 
 # Function to estimate ATT using Outcome Regression
-def OR_att(data, X_cols, T_col, Y_col):
-    X_treated = data[data[T_col] == 1][X_cols].values
-    Y_treated = data[data[T_col] == 1][Y_col].values
-    X_control = data[data[T_col] == 0][X_cols].values
-    Y_control = data[data[T_col] == 0][Y_col].values
+def OR_att(df, X_cols, T_col, Y_col):
+    X_treated = df[df[T_col] == 1][X_cols].values
+    Y_treated = df[df[T_col] == 1][Y_col].values
+    X_control = df[df[T_col] == 0][X_cols].values
+    Y_control = df[df[T_col] == 0][Y_col].values
     
     # Models
     model_treated = LinearRegression().fit(X_treated, Y_treated)
@@ -52,51 +52,51 @@ def OR_att(data, X_cols, T_col, Y_col):
     return OR_att_estimate
 
 # Function to estimate ATE using IPW (Inverse Probability Weighting)
-def IPW_ate(data, X_cols, T_col, Y_col):
+def IPW_ate(df, X_cols, T_col, Y_col):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
-        data['pscore'] = smf.logit(formula_pscore, data=data).fit(disp=0).predict()
+        df['pscore'] = smf.logit(formula_pscore, data=df).fit(disp=0).predict()
     
-    data['W1'] = 1 / data['pscore']
-    data.loc[data[T_col] == 0, 'W1'] = 0
-    data['W2'] = 1 / (1 - data['pscore'])
-    data.loc[data[T_col] == 1, 'W2'] = 0
-    data['W_ATE'] = data['W1'] + data['W2']
+    df['W1'] = 1 / df['pscore']
+    df.loc[df[T_col] == 0, 'W1'] = 0
+    df['W2'] = 1 / (1 - df['pscore'])
+    df.loc[df[T_col] == 1, 'W2'] = 0
+    df['W_ATE'] = df['W1'] + df['W2']
     
-    model_ate = sm.WLS(data[Y_col], sm.add_constant(data[T_col]), weights=data['W_ATE']).fit()
+    model_ate = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATE']).fit()
     
     return model_ate.params[T_col]
 
 # Function to estimate ATT using IPW (Inverse Probability Weighting)
-def IPW_att(data, X_cols, T_col, Y_col):
+def IPW_att(df, X_cols, T_col, Y_col):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         formula_pscore = f"{T_col} ~ " + " + ".join(X_cols)
-        data['pscore'] = smf.logit(formula_pscore, data=data).fit(disp=0).predict()
+        df['pscore'] = smf.logit(formula_pscore, data=df).fit(disp=0).predict()
     
-    data['W_ATT'] = data['pscore'] / (1 - data['pscore'])
-    data.loc[data[T_col] == 1, 'W_ATT'] = 1
+    df['W_ATT'] = df['pscore'] / (1 - df['pscore'])
+    df.loc[df[T_col] == 1, 'W_ATT'] = 1
     
-    model_att = sm.WLS(data[Y_col], sm.add_constant(data[T_col]), weights=data['W_ATT']).fit()
+    model_att = sm.WLS(df[Y_col], sm.add_constant(df[T_col]), weights=df['W_ATT']).fit()
     
     return model_att.params[T_col]
 
 # Function to estimate ATE and ATT using Doubly Robust Estimator
-def DR_ate_att(data, X_cols, T_col, Y_col):
-    X_np = data[X_cols].values
-    T_np = data[T_col].values
-    Y_np = data[Y_col].values
+def DR_ate_att(df, X_cols, T_col, Y_col):
+    X_np = df[X_cols].values
+    T_np = df[T_col].values
+    Y_np = df[Y_col].values
 
     ps = LogisticRegression(C=1e6, max_iter=1000).fit(X_np, T_np).predict_proba(X_np)[:, 1]
-    data["ps"] = ps
+    df["ps"] = ps
 
-    mu_model = LinearRegression().fit(data[X_cols + [T_col]], data[Y_col])
-    mu0 = mu_model.predict(data[X_cols].assign(**{T_col: 0}))
-    mu1 = mu_model.predict(data[X_cols].assign(**{T_col: 1}))
+    mu_model = LinearRegression().fit(df[X_cols + [T_col]], df[Y_col])
+    mu0 = mu_model.predict(df[X_cols].assign(**{T_col: 0}))
+    mu1 = mu_model.predict(df[X_cols].assign(**{T_col: 1}))
 
     dr_ate = mu1 - mu0 + (T_np / ps) * (Y_np - mu1) - ((1 - T_np) / (1 - ps)) * (Y_np - mu0)
-    dr_att = mu1 - mu0 + data[T_col] * (Y_np - mu1) - (1 - data[T_col]) * ps / (1 - ps) * (Y_np - mu0)
+    dr_att = mu1 - mu0 + df[T_col] * (Y_np - mu1) - (1 - df[T_col]) * ps / (1 - ps) * (Y_np - mu0)
 
     return {
         'ATE_Estimate': np.mean(dr_ate),
@@ -105,8 +105,8 @@ def DR_ate_att(data, X_cols, T_col, Y_col):
 
 # Main class to perform estimation with various estimators
 class pyDRReg:
-    def __init__(self, data, X_cols, T_col, Y_col, method='ate', estimator='OR', n_bootstrap=50, seed=None):
-        self.df = data
+    def __init__(self, df, X_cols, T_col, Y_col, method='ate', estimator='OR', n_bootstrap=50, seed=None):
+        self.df = df
         self.X_cols = X_cols
         self.T_col = T_col
         self.Y_col = Y_col
@@ -144,7 +144,7 @@ class pyDRReg:
         estimator_func = self._select_estimator()
         
         for _ in range(self.n_bootstrap):
-            df_resampled = resample(self.df, replace=True, n_samples=len(self.df), random_state=self.seed)
+            df_resampled = resample(self.df, replace=True, n_samples=len(self.df))
             
             if self.estimator == 'DR':
                 dr_results = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
@@ -157,7 +157,7 @@ class pyDRReg:
         # Calculate standard error, confidence intervals, and p-value using bootstrap
         se = np.std(estimates, ddof=1)
         ci_lower = self.fixed_estimate - 1.96 * se
-        ci_upper = self.fixed_estimate - 1.96 * se
+        ci_upper = self.fixed_estimate + 1.96 * se
         z_value = self.fixed_estimate / se
         p_value = 2 * (1 - stats.norm.cdf(np.abs(z_value)))
         
