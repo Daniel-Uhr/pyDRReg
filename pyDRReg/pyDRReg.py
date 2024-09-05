@@ -101,7 +101,7 @@ def DR_ate_att(data, X_cols, T_col, Y_col):
 # Main class to perform estimation with various estimators
 class pyDRReg:
     def __init__(self, data, X_cols, T_col, Y_col, method='ate', estimator='OR', n_bootstrap=50, seed=None):
-        self.data = data
+        self.df = data.copy()  # Use a copy to avoid modifying the original DataFrame
         self.X_cols = X_cols
         self.T_col = T_col
         self.Y_col = Y_col
@@ -123,22 +123,21 @@ class pyDRReg:
             raise ValueError(f"Estimator '{self.estimator}' not recognized. Available estimators: 'OR', 'IPW', 'DR'.")
 
     def _run_estimation(self):
-        np.random.seed(self.seed)  # Set the random seed for reproducibility
         estimates = []
         estimator_func = self._select_estimator()
+        np.random.seed(self.seed)  # Set the seed for reproducibility
         
         for _ in range(self.n_bootstrap):
-            data_resampled = resample(self.data, replace=True, n_samples=len(self.data), random_state=self.seed)
+            df_resampled = resample(self.df, replace=True, n_samples=len(self.df), random_state=self.seed)
             
             if self.estimator == 'DR':
-                dr_results = estimator_func(data_resampled, self.X_cols, self.T_col, self.Y_col)
+                dr_results = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
                 estimate = dr_results['ATE_Estimate'] if self.method == 'ate' else dr_results['ATT_Estimate']
             else:
-                estimate = estimator_func(data_resampled, self.X_cols, self.T_col, self.Y_col)
+                estimate = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
             
             estimates.append(estimate)
         
-        # Calculate standard error, confidence intervals, and p-value using bootstrap
         se = np.std(estimates, ddof=1)
         mean_estimate = np.mean(estimates)
         ci_lower = mean_estimate - 1.96 * se
@@ -146,7 +145,6 @@ class pyDRReg:
         z_value = mean_estimate / se
         p_value = 2 * (1 - stats.norm.cdf(np.abs(z_value)))
         
-        # Store results
         self.results = {
             'Estimator': self.estimator,
             'Method': self.method.upper(),
@@ -161,7 +159,6 @@ class pyDRReg:
         if self.results is None:
             raise ValueError("Estimation has not been completed.")
         
-        # Format results into a DataFrame for friendly display
         results_df = pd.DataFrame({
             'Metric': ['Estimator', 'Method', 'Estimate', 'SE', 't-stat', 'p-value', 'CI Lower', 'CI Upper'],
             'Value': [
