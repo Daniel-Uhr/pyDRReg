@@ -183,7 +183,7 @@ class pyDRReg:
                 self.results['Estimator'],
                 self.results['Method'],
                 self.results['Estimate'],
-                self.results['SE'],
+                self.results['bootstrap SE'],
                 self.results['t-stat'],
                 self.results['p-value'],
                 self.results['CI'][0],  # CI Lower
