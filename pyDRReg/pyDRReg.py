@@ -4,7 +4,6 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.utils import resample
 from scipy import stats
 import statsmodels.formula.api as smf
-import statsmodels.api as sm
 import warnings
 
 # Function to estimate ATE using Outcome Regression
@@ -37,12 +36,18 @@ def OR_att(df, X_cols, T_col, Y_col):
     model_treated = LinearRegression().fit(X_treated, Y_treated)
     model_control = LinearRegression().fit(X_control, Y_control)
     
-    # Predictions
+    # Predictions for treated and counterfactuals using control group model
     mu1_X = model_treated.predict(X_treated)
-    mu0_X = model_control.predict(X_treated)  # Use treated X for counterfactual
+    mu0_X = model_control.predict(X_treated)  # Counterfactual for treated
+    
+    # Calculate deviations for treated
+    deviations_treated = Y_treated - mu1_X
+    
+    # Mean of deviations
+    deviations_mean = deviations_treated.mean()
     
     # Estimate ATT
-    OR_att_estimate = np.mean(mu1_X - mu0_X)
+    OR_att_estimate = (mu1_X.mean() - mu0_X.mean()) + deviations_mean
     
     return OR_att_estimate
 
@@ -105,7 +110,7 @@ class pyDRReg:
         self.X_cols = X_cols
         self.T_col = T_col
         self.Y_col = Y_col
-        self.method = method
+        self.method = method.lower()
         self.estimator = estimator.upper()
         self.n_bootstrap = n_bootstrap
         self.results = None
@@ -132,7 +137,6 @@ class pyDRReg:
                 dr_results = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
                 estimate = dr_results['ATE_Estimate'] if self.method == 'ate' else dr_results['ATT_Estimate']
             else:
-                # Handle OR and IPW estimators correctly as dictionaries or scalars
                 estimate = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
             
             estimates.append(estimate)
@@ -177,4 +181,5 @@ class pyDRReg:
         
         # Return the formatted DataFrame
         return results_df
+
 
