@@ -35,8 +35,8 @@ def OR_ate(df, X_cols, T_col, Y_col):
     # Estimate ATE
     OR_ate_estimate = np.mean(mu1 - mu0)
     
-    # Calculate robust standard error for ATE
-    se_ate = robust_se(model_1, X[T == 1], Y[T == 1]) + robust_se(model_0, X[T == 0], Y[T == 0])
+    # Calculate robust standard error for ATE using the combined variance of treated and untreated groups
+    se_ate = np.sqrt(np.var(mu1 - mu0) / len(mu1))
     
     # Calculate confidence interval and p-value
     z_value = OR_ate_estimate / se_ate
@@ -63,7 +63,7 @@ def OR_att(df, X_cols, T_col, Y_col):
     model_treated = LinearRegression().fit(X_treated, Y_treated)
     model_control = LinearRegression().fit(X_control, Y_control)
     
-    # Predictions
+    # Predictions for treated and counterfactuals using control group model
     mu1_X = model_treated.predict(X_treated)
     mu0_X = model_control.predict(X_treated)  # Use treated X for counterfactual
     
@@ -71,7 +71,7 @@ def OR_att(df, X_cols, T_col, Y_col):
     OR_att_estimate = np.mean(mu1_X - mu0_X)
     
     # Calculate robust standard error for ATT
-    se_att = robust_se(model_treated, X_treated, Y_treated) + robust_se(model_control, X_control, Y_control)
+    se_att = np.sqrt(np.var(mu1_X - mu0_X) / len(mu1_X))
     
     # Calculate confidence interval and p-value
     z_value = OR_att_estimate / se_att
@@ -150,8 +150,8 @@ def DR_ate_att(df, X_cols, T_col, Y_col):
 
     # Estimate mu0 and mu1 using a combined model
     mu_model = LinearRegression().fit(df[X_cols + [T_col]], df[Y_col])
-    mu0 = mu_model.predict(df[X_cols].assign(Treated=0))
-    mu1 = mu_model.predict(df[X_cols].assign(Treated=1))
+    mu0 = mu_model.predict(df[X_cols].assign(**{T_col: 0}))  # Corrected column name assignment
+    mu1 = mu_model.predict(df[X_cols].assign(**{T_col: 1}))  # Corrected column name assignment
 
     # Calculate ATE using DR formula
     dr_ate = mu1 - mu0 + (T_np / ps) * (Y_np - mu1) - ((1 - T_np) / (1 - ps)) * (Y_np - mu0)
@@ -247,3 +247,4 @@ class pyDRReg:
         
         # Return the formatted DataFrame
         return results_df
+
