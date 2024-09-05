@@ -77,7 +77,9 @@ def OR_att(df, X_cols, T_col, Y_col):
     # Calcular ATT
     OR_att_estimate = (mu1_X.mean() - mu0_X.mean()) + deviations_mean
 
-    return OR_att_estimate
+    return {
+        'Estimate': OR_att_estimate
+    }
 
 # Function to estimate ATE using IPW (Inverse Probability Weighting)
 def IPW_ate(df, X_cols, T_col, Y_col):
@@ -153,6 +155,7 @@ def DR_ate_att(df, X_cols, T_col, Y_col):
 
     return {
         'ATE_Estimate': np.mean(dr_ate),
+        'ATT_Estimate': np.mean
         'ATT_Estimate': np.mean(dr_att)
     }
 
@@ -195,7 +198,9 @@ class pyDRReg:
                 dr_results = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
                 estimate = dr_results['ATE_Estimate'] if self.method == 'ate' else dr_results['ATT_Estimate']
             else:
-                estimate = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)['Estimate']
+                # Adjusted to handle OR_att and OR_ate correctly as dictionaries or scalar
+                result = estimator_func(df_resampled, self.X_cols, self.T_col, self.Y_col)
+                estimate = result['Estimate'] if isinstance(result, dict) else result
             
             estimates.append(estimate)
         
